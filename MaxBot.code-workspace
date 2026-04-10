@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "MaxBot",
+			"path": "."
+		},
+		{
+			"name": "DataFrame",
+			"path": "../Documents/DataFrame"
+		}
+	],
+	"settings": {}
+}

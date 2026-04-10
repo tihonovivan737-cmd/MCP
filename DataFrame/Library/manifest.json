@@ -1,0 +1,34 @@
+{
+  "qdrant_mode": "local_path",
+  "qdrant_url": null,
+  "qdrant_local_path": "/home/megalab/LLM/DataFrame/Library/qdrant_local",
+  "postgres_enabled": true,
+  "source_files_in_postgres": false,
+  "qdrant_collection": "support_kb",
+  "embedding_model": "intfloat/multilingual-e5-large",
+  "knowledge_csv": "/home/megalab/LLM/DataFrame/Library/knowledge_base.csv",
+  "pdf_paths": [
+    "/home/megalab/LLM/DataFrame/Library/ТКРФ.pdf",
+    "/home/megalab/LLM/DataFrame/Library/ФЗ-209.pdf",
+    "/home/megalab/LLM/DataFrame/Library/НКРФ.pdf"
+  ],
+  "built_at": "2026-04-07T07:35:31.133046+00:00",
+  "chunks_total": 5701,
+  "sources": {
+    "csv_sha256": "d9f0febe4a994b459e2cdd2bac7569e0827921c5142332b2c591484df58b2e5d",
+    "pdf_sha256": [
+      {
+        "path": "/home/megalab/LLM/DataFrame/Library/ТКРФ.pdf",
+        "sha256": "58c6097113792b4edb298cffda43fa4481bcc3ca31879d5a835015b2fcbbb7d0"
+      },
+      {
+        "path": "/home/megalab/LLM/DataFrame/Library/ФЗ-209.pdf",
+        "sha256": "0173b164a78b4135f072716741b3d2391852576d613b825091c22ccf40158409"
+      },
+      {
+        "path": "/home/megalab/LLM/DataFrame/Library/НКРФ.pdf",
+        "sha256": "19a307db63c054809655685ac2a50ff4135565d52c06631d2b5f1c2b324f3b57"
+      }
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+import logging
+import urllib.error
+import urllib.request
+
+from qdrant_client.http import models as qm
+
+from ..rag.config import Settings
+from ..rag.embeddings import embed_texts
+from ..rag.qdrant_store import search
+
+logger = logging.getLogger(__name__)
+
+
+def ollama_generate_legacy(settings: Settings, prompt: str) -> str:
+    url = settings.ollama_url.rstrip("/") + "/api/generate"
+    payload: dict = {"model": settings.llm_model, "prompt": prompt, "stream": False}
+    if settings.ollama_think:
+        payload["think"] = True
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return (data.get("response") or "").strip()
+
+
+def ollama_chat(settings: Settings, system: str, user: str) -> str:
+    url = settings.ollama_url.rstrip("/") + "/api/chat"
+    payload: dict = {
+        "model": settings.llm_model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "stream": False,
+    }
+    if settings.ollama_think:
+        payload["think"] = True
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        msg = data.get("message") or {}
+        text = (msg.get("content") or "").strip()
+        if text:
+            return text
+    except urllib.error.HTTPError as e:
+        logger.debug("Ollama /api/chat HTTP %s", e.code)
+    except urllib.error.URLError as e:
+        return f"[LLM недоступен: {e}]"
+
+    combined = f"{system}\n\nПользователь:\n{user}"
+    try:
+        return ollama_generate_legacy(settings, combined)
+    except urllib.error.URLError as e:
+        return f"[LLM недоступен: {e}. Ниже — найденные фрагменты.]"
+
+
+def retrieve_hits(client, settings: Settings, question: str, *, query_filter: qm.Filter | None = None):
+    qvec = embed_texts([question], settings, is_query=True)[0]
+    return search(client, settings, qvec, limit=settings.retrieve_top_k, query_filter=query_filter)
+
