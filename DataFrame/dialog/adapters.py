@@ -21,7 +21,7 @@ def ollama_generate_legacy(settings: Settings, prompt: str) -> str:
         payload["think"] = True
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return (data.get("response") or "").strip()
 
@@ -32,13 +32,14 @@ def ollama_chat(settings: Settings, system: str, user: str) -> str:
         "model": settings.llm_model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "stream": False,
+        "options": {"num_predict": 500},
     }
     if settings.ollama_think:
         payload["think"] = True
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         msg = data.get("message") or {}
         text = (msg.get("content") or "").strip()

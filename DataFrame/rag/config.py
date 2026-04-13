@@ -71,11 +71,24 @@ class Settings:
             or "http://127.0.0.1:11434"
         ),
     )
-    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", "qwen3:8b"))
+    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", "qwen2.5:3b"))
     # Режим размышления в Ollama (/api/chat, /api/generate): см. docs.ollama.com/capabilities/thinking
-    ollama_think: bool = field(default_factory=lambda: _env_bool("OLLAMA_THINK", True))
+    ollama_think: bool = field(default_factory=lambda: _env_bool("OLLAMA_THINK", False))
 
-    retrieve_top_k: int = field(default_factory=lambda: int(os.environ.get("RETRIEVE_TOP_K", "10")))
+    retrieve_top_k: int = field(default_factory=lambda: int(os.environ.get("RETRIEVE_TOP_K", "3")))
+
+    # Decision layer
+    decision_min_score: float = field(default_factory=lambda: float(os.environ.get("DECISION_MIN_SCORE", "0.35")))
+    decision_strong_score: float = field(default_factory=lambda: float(os.environ.get("DECISION_STRONG_SCORE", "0.55")))
+
+    # Reranker (по умолчанию выключен)
+    use_rerank: bool = field(default_factory=lambda: _env_bool("USE_RERANK", False))
+    rerank_model: str = field(
+        default_factory=lambda: os.environ.get(
+            "RERANK_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+        )
+    )
+    rerank_fetch_k: int = field(default_factory=lambda: int(os.environ.get("RERANK_FETCH_K", "20")))
 
     pdf_chunk_max_chars: int = field(
         default_factory=lambda: int(os.environ.get("PDF_CHUNK_MAX_CHARS", "2800")),

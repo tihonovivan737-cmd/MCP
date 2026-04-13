@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+import logging
+
+from maxapi.exceptions import MaxApiError
+
 from bot_runtime import is_duplicate_callback, log_user_activity
+
+logger = logging.getLogger(__name__)
+
+
+async def _safe_answer(event) -> None:
+    """Подтверждает callback; игнорирует 429 rate-limit от MAX API."""
+    try:
+        await event.answer()
+    except MaxApiError as exc:
+        if getattr(exc, "code", None) == 429:
+            logger.debug("Callback answer rate-limited (429), skipping: %s", exc)
+        else:
+            raise
 from bot_texts import (
     AGRO_TEXT,
     CALLBACK_CONSULT_TEXT,
@@ -40,14 +57,14 @@ from bot_ui import (
 async def handle_callback_event(event, *, upsert_message, chatbot_active_chats: set[int]) -> None:
     callback_id = event.callback.callback_id
     if is_duplicate_callback(callback_id):
-        await event.answer()
+        await _safe_answer(event)
         return
 
     payload = event.callback.payload
     chat_id, user_id = event.get_ids()
     message = event.message
     log_user_activity(action=f"callback:{payload}", user=event.callback.user, chat_id=chat_id)
-    await event.answer()
+    await _safe_answer(event)
 
     if chat_id is not None and payload != "chat_bot_info":
         chatbot_active_chats.discard(chat_id)

@@ -9,6 +9,8 @@ from qdrant_client.http import models as qm
 
 from .adapters import ollama_chat, retrieve_hits
 from ..rag.config import Settings, load_settings
+from ..rag.decision import DecisionPolicy
+from ..rag.intent import classify_intent
 from ..rag.logging_utils import configure_logging
 from ..rag.qdrant_store import get_client
 
@@ -153,10 +155,20 @@ def run_interactive(settings: Settings | None = None) -> None:
                 ),
             )
 
+        if not classify_intent(question, settings):
+            print("\n--- Ответ ---\n\nЯ отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос.")
+            continue
+
         hits = retrieve_hits(client, settings, question, query_filter=query_filter)
 
-        if not hits:
-            print("Ничего не найдено (попробуйте /clear или другую формулировку).")
+        decision = DecisionPolicy()(
+            hits,
+            question,
+            min_score=settings.decision_min_score,
+            strong_score=settings.decision_strong_score,
+        )
+        if decision.status != "ok":
+            print(f"\n--- Ответ ---\n\n{decision.message}")
             continue
 
         context, refs_line = _format_hits(hits)

@@ -76,5 +76,5 @@ async def handle_message_event(event, *, send_in_chat, upsert_message, chatbot_a
 
     if chat_id is None or chat_id not in chatbot_active_chats:
         return
-    answer = answer_from_dataframe(text.strip())
+    answer = await asyncio.to_thread(answer_from_dataframe, text.strip())
     await send_in_chat(chat_id=chat_id, user_id=user_id or 0, text=answer, attachments=[chat_dialog_keyboard()])
