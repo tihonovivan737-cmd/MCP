@@ -76,6 +76,8 @@ class Settings:
     ollama_think: bool = field(default_factory=lambda: _env_bool("OLLAMA_THINK", False))
 
     retrieve_top_k: int = field(default_factory=lambda: int(os.environ.get("RETRIEVE_TOP_K", "3")))
+    chat_history_turns: int = field(default_factory=lambda: int(os.environ.get("CHAT_HISTORY_TURNS", "6")))
+    retrieval_history_turns: int = field(default_factory=lambda: int(os.environ.get("RETRIEVAL_HISTORY_TURNS", "3")))
 
     # Decision layer
     decision_min_score: float = field(default_factory=lambda: float(os.environ.get("DECISION_MIN_SCORE", "0.35")))

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Awaitable, Callable
 
+from maxapi.enums.parse_mode import TextFormat
 from maxapi.types import CallbackButton, LinkButton
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
+from maxapi.utils.formatting import Link
 
 from bot_texts import (
     CALLBACK_MENU_TEXT,
@@ -17,6 +20,7 @@ from bot_texts import (
 )
 
 UpsertFn = Callable[..., Awaitable[None]]
+_PHONE_RE = re.compile(r"((?:\+7|8)[\d\s\-\(\)]{9,})")
 
 
 def back_to_main_button():
@@ -28,7 +32,6 @@ def back_to_main_button():
 def back_button(payload: str, text: str = "⬅️ Вернуться назад"):
     builder = InlineKeyboardBuilder()
     builder.row(CallbackButton(text=text, payload=payload))
-    builder.row(CallbackButton(text="◀️ В главное меню", payload="back_main"))
     return builder.as_markup()
 
 
@@ -84,20 +87,18 @@ def fin_mb_keyboard(page_idx: int) -> object:
     next_idx = min(page_idx + 1, total - 1)
     builder = InlineKeyboardBuilder()
     builder.row(
-        CallbackButton(text="1", payload="fin_mb_page_0"),
         CallbackButton(text="⬅️", payload=f"fin_mb_page_{prev_idx}"),
         CallbackButton(text=str(page_idx + 1), payload=f"fin_mb_page_{page_idx}"),
         CallbackButton(text="➡️", payload=f"fin_mb_page_{next_idx}"),
         CallbackButton(text=str(total), payload=f"fin_mb_page_{total - 1}"),
     )
     builder.row(
-        CallbackButton(text="Подробнее", payload=f"fin_mb_details_{page_idx}"),
-        CallbackButton(text="↗️", payload=f"fin_mb_open_{page_idx}"),
+        LinkButton(
+            text="↗️ Открыть",
+            url="https://xn---24-9cdulgg0aog6b.xn--p1ai/sections/mikrofinansirovanie/#page-nav-1",
+        ),
     )
-    builder.row(
-        CallbackButton(text="⬅️ Вернуться назад", payload="back_fin_org"),
-        CallbackButton(text="◀️ В главное меню", payload="back_main"),
-    )
+    builder.row(CallbackButton(text="⬅️ Вернуться назад", payload="back_fin_org"))
     return builder.as_markup()
 
 
@@ -136,6 +137,50 @@ def split_text_and_links(text: str) -> tuple[str, list[tuple[str, str]]]:
     return "\n".join(content_lines).strip(), other_links + msp_links
 
 
+def format_phone_links(text: str) -> tuple[str, TextFormat | None]:
+    has_phone = False
+    formatted_lines: list[str] = []
+    for line in text.splitlines():
+        match = _PHONE_RE.search(line)
+        if not match:
+            formatted_lines.append(line)
+            continue
+
+        phone = match.group(1).strip()
+        tel = re.sub(r"[^\d+]", "", phone)
+        if tel.startswith("8"):
+            tel = "+7" + tel[1:]
+        elif tel.startswith("7"):
+            tel = "+" + tel
+        if not tel.startswith("+7"):
+            formatted_lines.append(line)
+            continue
+
+        has_phone = True
+        formatted_lines.append(line.replace(phone, Link(phone, url=f"tel:{tel}").as_markdown(), 1))
+
+    return "\n".join(formatted_lines), TextFormat.MARKDOWN if has_phone else None
+
+
+async def send_info_text(
+    upsert: UpsertFn,
+    message,
+    chat_id: int | None,
+    user_id: int,
+    *,
+    text: str,
+    back_payload: str,
+    back_text: str = "⬅️ Вернуться назад",
+):
+    body, links = split_text_and_links(text)
+    formatted_body, text_format = format_phone_links(body or text)
+    builder = InlineKeyboardBuilder()
+    for label, url in links:
+        builder.row(LinkButton(text=label, url=url))
+    builder.row(CallbackButton(text=back_text, payload=back_payload))
+    await upsert(message, chat_id, user_id, text=formatted_body, attachments=[builder.as_markup()], format=text_format)
+
+
 async def send_main_menu(upsert: UpsertFn, message, chat_id: int | None, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.row(CallbackButton(text="📋 Открыть бизнес", payload="how_open_business"))
@@ -166,16 +211,12 @@ async def send_non_fin_page(upsert: UpsertFn, message, chat_id: int | None, user
     for label, url in links:
         builder.row(LinkButton(text=label, url=url))
     builder.row(
-        CallbackButton(text="1", payload="non_fin_page_0"),
         CallbackButton(text="⬅️", payload=f"non_fin_page_{prev_idx}"),
         CallbackButton(text=str(page_idx + 1), payload=f"non_fin_page_{page_idx}"),
         CallbackButton(text="➡️", payload=f"non_fin_page_{next_idx}"),
         CallbackButton(text=str(total), payload=f"non_fin_page_{total - 1}"),
     )
-    builder.row(
-        CallbackButton(text="⬅️ Вернуться назад", payload="back_non_fin_org"),
-        CallbackButton(text="◀️ В главное меню", payload="back_main"),
-    )
+    builder.row(CallbackButton(text="⬅️ Вернуться назад", payload="back_non_fin_org"))
     await upsert(message, chat_id, user_id, text=page_text, attachments=[builder.as_markup()])
 
 
@@ -240,14 +281,18 @@ async def send_fin_mb_page(upsert: UpsertFn, message, chat_id: int | None, user_
 async def send_fin_mb_details(upsert: UpsertFn, message, chat_id: int | None, user_id: int, page_idx: int):
     builder = InlineKeyboardBuilder()
     builder.row(CallbackButton(text="⬅️ Вернуться назад", payload=f"fin_mb_page_{page_idx}"))
-    builder.row(CallbackButton(text="◀️ В главное меню", payload="back_main"))
     await upsert(message, chat_id, user_id, text=FIN_MB_TEXT, attachments=[builder.as_markup()])
 
 
 async def send_fin_mb_open(upsert: UpsertFn, message, chat_id: int | None, user_id: int, page_idx: int):
     builder = InlineKeyboardBuilder()
+    builder.row(
+        LinkButton(
+            text="↗️ Открыть",
+            url="https://xn---24-9cdulgg0aog6b.xn--p1ai/sections/mikrofinansirovanie/#page-nav-1",
+        ),
+    )
     builder.row(CallbackButton(text="⬅️ Вернуться назад", payload=f"fin_mb_page_{page_idx}"))
-    builder.row(CallbackButton(text="◀️ В главное меню", payload="back_main"))
     await upsert(
         message,
         chat_id,

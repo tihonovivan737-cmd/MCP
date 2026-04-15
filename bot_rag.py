@@ -1,10 +1,14 @@
-"""Блок интеграции с RAG (DataFrame + админ-команды)."""
+"""Интеграция с RAG (DataFrame + админ-команды)."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+
+HistoryTurn = tuple[str, str]
 
 _DF_INIT_DONE = False
 _DF_ERROR: str | None = None
@@ -27,8 +31,9 @@ def init_dataframe_rag() -> None:
         sys.path.insert(0, df_parent)
 
     try:
-        from DataFrame.dialog.interactive import SYSTEM_PROMPT, _format_hits, _user_message  # type: ignore
         from DataFrame.dialog.adapters import ollama_chat as _ollama_chat  # type: ignore
+        from DataFrame.dialog.adapters import ollama_chat_async as _ollama_chat_async  # type: ignore
+        from DataFrame.dialog.interactive import SYSTEM_PROMPT, _format_hits  # type: ignore
         from DataFrame.rag.config import load_settings  # type: ignore
         from DataFrame.rag.embeddings import embed_texts  # type: ignore
         from DataFrame.rag.intent import classify_intent  # type: ignore
@@ -50,6 +55,7 @@ def init_dataframe_rag() -> None:
     try:
         from DataFrame.rag.decision import DecisionPolicy  # type: ignore
         from DataFrame.rag.reranker import rerank  # type: ignore
+
         decision_policy = DecisionPolicy()
     except Exception:
         decision_policy = None
@@ -62,8 +68,8 @@ def init_dataframe_rag() -> None:
         "search": search,
         "rerank": rerank,
         "_format_hits": _format_hits,
-        "_user_message": _user_message,
         "_ollama_chat": _ollama_chat,
+        "_ollama_chat_async": _ollama_chat_async,
         "SYSTEM_PROMPT": SYSTEM_PROMPT,
         "decision_policy": decision_policy,
         "classify_intent": classify_intent,
@@ -105,6 +111,65 @@ def run_convert_guide_trusting_postgres() -> None:
             os.environ["SOURCE_FILES_IN_POSTGRES"] = old
 
 
+def _normalize_history(history: Sequence[HistoryTurn] | None) -> list[HistoryTurn]:
+    if not history:
+        return []
+    normalized: list[HistoryTurn] = []
+    for user_text, assistant_text in history:
+        user_text = (user_text or "").strip()
+        assistant_text = (assistant_text or "").strip()
+        if user_text or assistant_text:
+            normalized.append((user_text, assistant_text))
+    return normalized
+
+
+def _history_slice(history: Sequence[HistoryTurn] | None, max_turns: int) -> list[HistoryTurn]:
+    normalized = _normalize_history(history)
+    if max_turns <= 0:
+        return []
+    return normalized[-max_turns:]
+
+
+def _build_history_block(history: Sequence[HistoryTurn] | None, max_turns: int) -> str:
+    selected = _history_slice(history, max_turns)
+    if not selected:
+        return ""
+
+    lines: list[str] = []
+    for user_text, assistant_text in selected:
+        if user_text:
+            lines.append(f"Пользователь: {user_text}")
+        if assistant_text:
+            lines.append(f"Ассистент: {assistant_text}")
+    return "\n".join(lines)
+
+
+def _build_retrieval_question(question: str, history: Sequence[HistoryTurn] | None, max_turns: int) -> str:
+    selected = _history_slice(history, max_turns)
+    if not selected:
+        return question
+
+    previous_questions = [user_text for user_text, _ in selected if user_text]
+    if not previous_questions:
+        return question
+
+    history_text = "\n".join(f"- {item}" for item in previous_questions)
+    return (
+        f"История запросов пользователя:\n{history_text}\n\n"
+        f"Текущий запрос:\n{question}"
+    )
+
+
+def _build_user_message(question: str, context: str, history: Sequence[HistoryTurn] | None, max_turns: int) -> str:
+    history_block = _build_history_block(history, max_turns)
+    parts: list[str] = []
+    if history_block:
+        parts.append(f"История диалога:\n{history_block}")
+    parts.append(f"Контекст из базы знаний:\n{context}")
+    parts.append(f"Текущий вопрос: {question}\n\nСформулируй ответ по существу и учти историю диалога, если она помогает.")
+    return "\n\n".join(parts)
+
+
 def add_source_and_reindex(file_path_raw: str, logical_name: str | None = None) -> str:
     imports = init_dataframe_admin()
     if imports[0] is None:  # type: ignore[index]
@@ -129,7 +194,7 @@ def add_source_and_reindex(file_path_raw: str, logical_name: str | None = None) 
     chunks = ingest(settings, use_pg_sources=True)
     return (
         f"Источник добавлен: {logical}\n"
-        f"Переиндексация завершена: {chunks} чанков → Qdrant «{settings.qdrant_collection}»"
+        f"Переиндексация завершена: {chunks} чанков -> Qdrant «{settings.qdrant_collection}»"
     )
 
 
@@ -144,7 +209,7 @@ def reindex_from_postgres() -> str:
         return "Не задан DATABASE_URL. Сначала настройте подключение к PostgreSQL."
     apply_schema(settings)
     chunks = ingest(settings, use_pg_sources=True)
-    return f"Переиндексация завершена: {chunks} чанков → Qdrant «{settings.qdrant_collection}»"
+    return f"Переиндексация завершена: {chunks} чанков -> Qdrant «{settings.qdrant_collection}»"
 
 
 def list_sources_from_postgres() -> str:
@@ -162,7 +227,7 @@ def list_sources_from_postgres() -> str:
     return "Источники в PostgreSQL:\n" + "\n".join(f"• {name}" for name in names)
 
 
-def answer_from_dataframe(question: str) -> str:
+def answer_from_dataframe(question: str, history: Sequence[HistoryTurn] | None = None) -> str:
     init_dataframe_rag()
     if _DF_ERROR is not None:
         return _DF_ERROR
@@ -174,29 +239,26 @@ def answer_from_dataframe(question: str) -> str:
         search = _DF_CTX["search"]
         rerank = _DF_CTX["rerank"]
         _format_hits = _DF_CTX["_format_hits"]
-        _user_message = _DF_CTX["_user_message"]
         _ollama_chat = _DF_CTX["_ollama_chat"]
         system_prompt = _DF_CTX["SYSTEM_PROMPT"]
         decision_policy = _DF_CTX["decision_policy"]
         classify_intent = _DF_CTX["classify_intent"]
 
-        # Intent classifier
-        if not classify_intent(question, settings):
+        retrieval_question = _build_retrieval_question(question, history, settings.retrieval_history_turns)
+        if not classify_intent(retrieval_question, settings):
             return "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос."
 
-        # Retrieval
         fetch_limit = settings.rerank_fetch_k if settings.use_rerank else settings.retrieve_top_k
-        hits = search(client, settings, qvec := embed_texts([question], settings, is_query=True)[0],
-                      limit=fetch_limit, query_filter=None)
+        qvec = embed_texts([retrieval_question], settings, is_query=True)[0]
+        hits = search(client, settings, qvec, limit=fetch_limit, query_filter=None)
 
-        # Reranker
         if settings.use_rerank and rerank and hits:
-            hits = rerank(question, hits, model_name=settings.rerank_model, top_n=settings.retrieve_top_k)
+            hits = rerank(retrieval_question, hits, model_name=settings.rerank_model, top_n=settings.retrieve_top_k)
 
-        # Decision layer
         if decision_policy:
             decision = decision_policy(
-                hits, question,
+                hits,
+                retrieval_question,
                 min_score=settings.decision_min_score,
                 strong_score=settings.decision_strong_score,
             )
@@ -207,8 +269,67 @@ def answer_from_dataframe(question: str) -> str:
             return "По вашему запросу ничего не найдено в базе знаний."
 
         context, refs_line = _format_hits(hits)
-        user_msg = _user_message(question, context)
+        user_msg = _build_user_message(question, context, history, settings.chat_history_turns)
         answer = _ollama_chat(settings, system_prompt, user_msg).strip()
+        if not answer:
+            answer = "Не удалось сформировать ответ."
+        return f"{answer}\n\nИсточники:\n{refs_line}"
+    except Exception as exc:
+        return f"Ошибка при обработке вопроса через DataFrame: {exc}"
+
+
+async def answer_from_dataframe_async(question: str, history: Sequence[HistoryTurn] | None = None) -> str:
+    init_dataframe_rag()
+    if _DF_ERROR is not None:
+        return _DF_ERROR
+
+    try:
+        settings = _DF_CTX["settings"]
+        client = _DF_CTX["client"]
+        embed_texts = _DF_CTX["embed_texts"]
+        search = _DF_CTX["search"]
+        rerank = _DF_CTX["rerank"]
+        _format_hits = _DF_CTX["_format_hits"]
+        _ollama_chat_async = _DF_CTX["_ollama_chat_async"]
+        system_prompt = _DF_CTX["SYSTEM_PROMPT"]
+        decision_policy = _DF_CTX["decision_policy"]
+        classify_intent = _DF_CTX["classify_intent"]
+
+        retrieval_question = _build_retrieval_question(question, history, settings.retrieval_history_turns)
+        in_scope = await asyncio.to_thread(classify_intent, retrieval_question, settings)
+        if not in_scope:
+            return "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос."
+
+        fetch_limit = settings.rerank_fetch_k if settings.use_rerank else settings.retrieve_top_k
+        vectors = await asyncio.to_thread(embed_texts, [retrieval_question], settings, is_query=True)
+        hits = await asyncio.to_thread(search, client, settings, vectors[0], fetch_limit, None)
+
+        if settings.use_rerank and rerank and hits:
+            hits = await asyncio.to_thread(
+                rerank,
+                retrieval_question,
+                hits,
+                model_name=settings.rerank_model,
+                top_n=settings.retrieve_top_k,
+            )
+
+        if decision_policy:
+            decision = await asyncio.to_thread(
+                decision_policy,
+                hits,
+                retrieval_question,
+                min_score=settings.decision_min_score,
+                strong_score=settings.decision_strong_score,
+            )
+            if decision.status != "ok":
+                return decision.message or "Не удалось обработать запрос."
+
+        if not hits:
+            return "По вашему запросу ничего не найдено в базе знаний."
+
+        context, refs_line = await asyncio.to_thread(_format_hits, hits)
+        user_msg = _build_user_message(question, context, history, settings.chat_history_turns)
+        answer = (await _ollama_chat_async(settings, system_prompt, user_msg)).strip()
         if not answer:
             answer = "Не удалось сформировать ответ."
         return f"{answer}\n\nИсточники:\n{refs_line}"
