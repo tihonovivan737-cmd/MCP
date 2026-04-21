@@ -1,0 +1,171 @@
+"""Маршрутизация callback-событий."""
+
+from __future__ import annotations
+
+import logging
+
+from maxapi.exceptions import MaxApiError
+
+from bot_chat_state import ChatHistoryStore, reset_chat_state
+from bot_runtime import is_duplicate_callback, log_user_activity
+from bot_texts import (
+    AGRO_TEXT,
+    CALLBACK_CONSULT_TEXT,
+    CALLBACK_PLATFORM_TEXT,
+    CHAT_BOT_TEXT,
+    CONTACTS_MAIN_TEXT,
+    EDUCATION_TEXT,
+    EVALUATE_MB_TEXT,
+    EXPORT_TEXT,
+    FIN_GARANT_TEXT,
+    HOW_OPEN_BUSINESS_TEXT,
+    NF_TEXTS,
+    NON_FIN_SERVICES,
+    PRODUCTIVITY_TEXT,
+    PROP_TEXTS,
+)
+from bot_ui import (
+    back_button,
+    chat_dialog_keyboard,
+    how_open_business_keyboard,
+    send_callback_menu,
+    send_contacts,
+    send_evaluate_menu,
+    send_fin_mb_details,
+    send_fin_mb_open,
+    send_fin_mb_page,
+    send_fin_garant,
+    send_fin_org,
+    send_info_text,
+    send_main_menu,
+    send_non_fin_org,
+    send_non_fin_page,
+    send_property_services,
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def _safe_answer(event) -> None:
+    """Подтверждает callback; игнорирует 429 rate-limit от MAX API."""
+    try:
+        await event.answer()
+    except MaxApiError as exc:
+        if getattr(exc, "code", None) == 429:
+            logger.debug("Callback answer rate-limited (429), skipping: %s", exc)
+        else:
+            raise
+
+
+async def handle_callback_event(
+    event,
+    *,
+    upsert_message,
+    chatbot_active_chats: set[int],
+    chat_histories: ChatHistoryStore,
+) -> None:
+    callback_id = event.callback.callback_id
+    if is_duplicate_callback(callback_id):
+        await _safe_answer(event)
+        return
+
+    payload = event.callback.payload
+    chat_id, user_id = event.get_ids()
+    message = event.message
+    log_user_activity(action=f"callback:{payload}", user=event.callback.user, chat_id=chat_id)
+    await _safe_answer(event)
+
+    if payload != "chat_bot_info":
+        reset_chat_state(chatbot_active_chats, chat_histories, chat_id=chat_id, user_id=user_id)
+
+    if payload in ("start", "back_to_main", "back_main"):
+        await send_main_menu(upsert_message, message, chat_id, user_id)
+    elif payload == "how_open_business":
+        await upsert_message(message, chat_id, user_id, text=HOW_OPEN_BUSINESS_TEXT, attachments=[how_open_business_keyboard()])
+    elif payload in ("non_fin_support", "back_non_fin_org"):
+        await send_non_fin_page(upsert_message, message, chat_id, user_id, page_idx=0)
+    elif payload == "non_fin_mb":
+        await send_non_fin_page(upsert_message, message, chat_id, user_id, page_idx=0)
+    elif payload.startswith("non_fin_page_"):
+        await send_non_fin_page(upsert_message, message, chat_id, user_id, page_idx=int(payload.removeprefix("non_fin_page_")))
+    elif payload == "back_non_fin_services":
+        await send_non_fin_page(upsert_message, message, chat_id, user_id, page_idx=0)
+    elif payload in NF_TEXTS:
+        page_idx = next((idx for idx, (code, _) in enumerate(NON_FIN_SERVICES) if code == payload), 0)
+        await send_non_fin_page(upsert_message, message, chat_id, user_id, page_idx=page_idx)
+    elif payload in ("fin_support", "back_fin_org"):
+        await send_fin_org(upsert_message, message, chat_id, user_id)
+    elif payload == "fin_mb":
+        await send_fin_mb_page(upsert_message, message, chat_id, user_id, page_idx=0)
+    elif payload.startswith("fin_mb_page_"):
+        await send_fin_mb_page(upsert_message, message, chat_id, user_id, page_idx=int(payload.removeprefix("fin_mb_page_")))
+    elif payload.startswith("fin_mb_details_"):
+        await send_fin_mb_details(upsert_message, message, chat_id, user_id, page_idx=int(payload.removeprefix("fin_mb_details_")))
+    elif payload.startswith("fin_mb_open_"):
+        await send_fin_mb_open(upsert_message, message, chat_id, user_id, page_idx=int(payload.removeprefix("fin_mb_open_")))
+    elif payload == "fin_garant":
+        await send_fin_garant(upsert_message, message, chat_id, user_id, text=FIN_GARANT_TEXT)
+    elif payload == "productivity_labor":
+        await send_info_text(
+            upsert_message,
+            message,
+            chat_id,
+            user_id,
+            text=PRODUCTIVITY_TEXT,
+            back_payload="back_main",
+            back_text="◀️ В главное меню",
+        )
+    elif payload == "agro_support":
+        await send_info_text(
+            upsert_message,
+            message,
+            chat_id,
+            user_id,
+            text=AGRO_TEXT,
+            back_payload="back_main",
+            back_text="◀️ В главное меню",
+        )
+    elif payload == "export_coop":
+        await send_info_text(
+            upsert_message,
+            message,
+            chat_id,
+            user_id,
+            text=EXPORT_TEXT,
+            back_payload="back_main",
+            back_text="◀️ В главное меню",
+        )
+    elif payload == "education_services":
+        await send_info_text(
+            upsert_message,
+            message,
+            chat_id,
+            user_id,
+            text=EDUCATION_TEXT,
+            back_payload="back_main",
+            back_text="◀️ В главное меню",
+        )
+    elif payload in ("property_support", "back_property_services"):
+        await send_property_services(upsert_message, message, chat_id, user_id)
+    elif payload in PROP_TEXTS:
+        await send_info_text(upsert_message, message, chat_id, user_id, text=PROP_TEXTS[payload], back_payload="back_property_services")
+    elif payload in ("contacts_orgs", "back_contacts_orgs", "contacts_mb"):
+        await send_contacts(upsert_message, message, chat_id, user_id)
+    elif payload in ("callback_request", "back_callback_menu"):
+        await send_callback_menu(upsert_message, message, chat_id, user_id)
+    elif payload == "callback_consult":
+        await send_info_text(upsert_message, message, chat_id, user_id, text=CALLBACK_CONSULT_TEXT, back_payload="back_callback_menu")
+    elif payload == "callback_platform":
+        await send_info_text(upsert_message, message, chat_id, user_id, text=CALLBACK_PLATFORM_TEXT, back_payload="back_callback_menu")
+    elif payload == "evaluate_quality":
+        await send_info_text(upsert_message, message, chat_id, user_id, text=EVALUATE_MB_TEXT, back_payload="back_main")
+    elif payload == "back_evaluate_menu":
+        await send_main_menu(upsert_message, message, chat_id, user_id)
+    elif payload == "evaluate_mb":
+        await send_info_text(upsert_message, message, chat_id, user_id, text=EVALUATE_MB_TEXT, back_payload="back_main")
+    elif payload == "chat_bot_info":
+        if chat_id is not None:
+            chatbot_active_chats.add(chat_id)
+        await upsert_message(message, chat_id, user_id, text=CHAT_BOT_TEXT, attachments=[chat_dialog_keyboard()])
+    elif payload == "chat_exit_to_menu":
+        await send_main_menu(upsert_message, message, chat_id, user_id)
