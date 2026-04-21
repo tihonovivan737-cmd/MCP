@@ -14,6 +14,7 @@ bot_ui.py           — экраны и клавиатуры
 bot_texts.py        — тексты разделов меню
 bot_rag.py          — интеграция с RAG
 bot_runtime.py      — логирование, дедупликация
+button_stats.py     — вывод статистики 
 DataFrame/          — RAG-пайплайн: индексация, поиск, генерация
 ```
 
@@ -67,7 +68,7 @@ python scripts/build_index.py
 MAX_BOT_TOKEN=твой_токен
 
 OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=qwen3:8b
+LLM_MODEL=qwen2.5:3b
 
 QDRANT_COLLECTION=support_kb
 EMBEDDING_MODEL=intfloat/multilingual-e5-large
