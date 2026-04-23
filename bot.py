@@ -31,9 +31,9 @@ _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 async def send_in_chat(chat_id: int | None, user_id: int, *, text: str, attachments=None, format=None):
     if chat_id is not None:
-        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments, format=format)
+        return await bot.send_message(chat_id=chat_id, text=text, attachments=attachments, format=format)
     else:
-        await bot.send_message(user_id=user_id, text=text, attachments=attachments, format=format)
+        return await bot.send_message(user_id=user_id, text=text, attachments=attachments, format=format)
 
 
 async def upsert_message(message, chat_id: int | None, user_id: int, *, text: str, attachments=None, format=None):

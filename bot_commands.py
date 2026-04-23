@@ -102,7 +102,7 @@ async def handle_message_event(
     if history is None:
         return
 
-    await send_in_chat(
+    processing_msg = await send_in_chat(
         chat_id=chat_id,
         user_id=user_id or 0,
         text="Ваш запрос в обработке, ожидайте",
@@ -117,11 +117,17 @@ async def handle_message_event(
             chat_id=chat_id,
             user_id=user_id or 0,
             send_in_chat=send_in_chat,
+            processing_msg=processing_msg,
         )
     )
 
 
-async def _process_chat_request(*, cmd: str, snapshot, history, chat_id: int | None, user_id: int, send_in_chat) -> None:
+async def _process_chat_request(*, cmd: str, snapshot, history, chat_id: int | None, user_id: int, send_in_chat, processing_msg=None) -> None:
     answer = await answer_from_dataframe_async(cmd, snapshot)
     history.append((cmd, _history_safe_answer(answer)))
+    if processing_msg is not None and processing_msg.message is not None:
+        try:
+            await processing_msg.message.delete()
+        except Exception:
+            pass
     await send_in_chat(chat_id=chat_id, user_id=user_id, text=answer, attachments=[chat_dialog_keyboard()])

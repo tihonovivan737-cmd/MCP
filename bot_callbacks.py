@@ -139,4 +139,12 @@ async def handle_callback_event(
     elif payload == "about_bot":
         await upsert_message(message, chat_id, user_id, text=ABOUT_BOT_TEXT, attachments=[back_to_main_button()])
     elif payload == "chat_exit_to_menu":
-        await send_main_menu(upsert_message, message, chat_id, user_id)
+        if message is not None:
+            await upsert_message(
+                message,
+                chat_id,
+                user_id,
+                text=message.body.text if message.body is not None else "",
+                attachments=[],
+            )
+        await send_main_menu(upsert_message, None, chat_id, user_id)
