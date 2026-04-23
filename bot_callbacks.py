@@ -9,6 +9,7 @@ from maxapi.exceptions import MaxApiError
 from bot_chat_state import ChatHistoryStore, reset_chat_state
 from bot_runtime import is_duplicate_callback, log_user_activity
 from bot_texts import (
+    ABOUT_BOT_TEXT,
     AGRO_TEXT,
     CALLBACK_CONSULT_TEXT,
     CALLBACK_PLATFORM_TEXT,
@@ -26,6 +27,7 @@ from bot_texts import (
 )
 from bot_ui import (
     back_button,
+    back_to_main_button,
     chat_dialog_keyboard,
     how_open_business_keyboard,
     send_callback_menu,
@@ -134,5 +136,7 @@ async def handle_callback_event(
         if chat_id is not None:
             chatbot_active_chats.add(chat_id)
         await upsert_message(message, chat_id, user_id, text=CHAT_BOT_TEXT, attachments=[chat_dialog_keyboard()])
+    elif payload == "about_bot":
+        await upsert_message(message, chat_id, user_id, text=ABOUT_BOT_TEXT, attachments=[back_to_main_button()])
     elif payload == "chat_exit_to_menu":
         await send_main_menu(upsert_message, message, chat_id, user_id)

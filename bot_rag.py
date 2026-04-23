@@ -246,7 +246,11 @@ def answer_from_dataframe(question: str, history: Sequence[HistoryTurn] | None =
 
         retrieval_question = _build_retrieval_question(question, history, settings.retrieval_history_turns)
         if not classify_intent(retrieval_question, settings):
-            return "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос."
+            return (
+                "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос.\n\n"
+                "Я могу помочь с: мерами поддержки МСП, субсидиями, грантами, займами, налогами, льготами, "
+                "регистрацией бизнеса, контактами организаций инфраструктуры поддержки."
+            )
 
         fetch_limit = settings.rerank_fetch_k if settings.use_rerank else settings.retrieve_top_k
         qvec = embed_texts([retrieval_question], settings, is_query=True)[0]
@@ -298,7 +302,11 @@ async def answer_from_dataframe_async(question: str, history: Sequence[HistoryTu
         retrieval_question = _build_retrieval_question(question, history, settings.retrieval_history_turns)
         in_scope = await asyncio.to_thread(classify_intent, retrieval_question, settings)
         if not in_scope:
-            return "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос."
+            return (
+                "Я отвечаю только на вопросы по поддержке малого и среднего бизнеса. Уточните запрос.\n\n"
+                "Я могу помочь с: мерами поддержки МСП, субсидиями, грантами, займами, налогами, льготами, "
+                "регистрацией бизнеса, контактами организаций инфраструктуры поддержки."
+            )
 
         fetch_limit = settings.rerank_fetch_k if settings.use_rerank else settings.retrieve_top_k
         vectors = await asyncio.to_thread(embed_texts, [retrieval_question], settings, is_query=True)

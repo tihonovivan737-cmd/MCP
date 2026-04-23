@@ -12,7 +12,9 @@ from bot_chat_state import ChatHistoryStore
 from bot_commands import handle_message_event
 from bot_runtime import is_duplicate_bot_started, setup_user_activity_file_logging, should_send_greeting
 from bot_texts import GREETING_TEXT
+from dotenv import load_dotenv
 
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 setup_user_activity_file_logging()
 

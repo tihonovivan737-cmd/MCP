@@ -138,6 +138,9 @@ def split_text_and_links(text: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 def format_phone_links(text: str) -> tuple[str, TextFormat | None]:
+    if "](tel:" in text:
+        return text, TextFormat.MARKDOWN
+
     has_phone = False
     formatted_lines: list[str] = []
     for line in text.splitlines():
@@ -195,6 +198,7 @@ async def send_main_menu(upsert: UpsertFn, message, chat_id: int | None, user_id
     builder.row(CallbackButton(text="☎️ Обратный звонок", payload="callback_request"))
     builder.row(CallbackButton(text="⭐ Оценить услуги", payload="evaluate_quality"))
     builder.row(CallbackButton(text="🤖 Чат-бот", payload="chat_bot_info"))
+    builder.row(CallbackButton(text="ℹ️ О боте", payload="about_bot"))
     await upsert(message, chat_id, user_id, text=MAIN_MENU_TEXT, attachments=[builder.as_markup()])
 
 
